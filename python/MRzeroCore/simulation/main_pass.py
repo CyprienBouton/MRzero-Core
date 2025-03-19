@@ -31,8 +31,7 @@ def execute_graph(graph: Graph,
                   min_latent_signal=1e-2,
                   print_progress=True,
                   return_mag_adc=False,
-                  clear_state_mag=True,
-                  intitial_mag: torch.Tensor | None = None
+                  clear_state_mag=False,
                   ) -> torch.Tensor | list:
     """Calculate the signal of the sequence by executing the phase graph.
 
@@ -57,9 +56,6 @@ def execute_graph(graph: Graph,
     clear_state_mag: bool
         If true, `state.mag = None` as soon as it is not needed anymore.
         Might reduce memory consumption in forward-only simulations.
-    initial_mag: Tensor | None
-        If set, simulation does not start with a fully relaxed state but the
-        given magnetization. Must be a complex 1D tensor with voxel_count elements.
 
     Returns
     -------
@@ -92,18 +88,21 @@ def execute_graph(graph: Graph,
     voxel_count = data.PD.numel()
 
     # The first repetition contains only one element: A fully relaxed z0
-    if intitial_mag is None:
-        graph[0][0].mag = torch.ones(
-            voxel_count, dtype=torch.cfloat, device=data.device
-        )
-    else:
-        graph[0][0].mag = intitial_mag  # steady state injection here
-
+    graph[0][0].mag = torch.ones(
+        voxel_count, dtype=torch.cfloat, device=data.device
+    )
     # Calculate kt_vec ourselves for autograd
     graph[0][0].kt_vec = torch.zeros(4, device=data.device)
-
+    
+    # compute the T1 values for each repetition
+    if data.T1.ndim==2:
+        assert data.T1.shape[0] == len(seq)
+        list_T1 = data.T1.clone()
+    elif data.T1.ndim==1:
+        list_T1 = data.T1.clone().expand(len(seq),-1)
+        
     mag_adc = []
-    for i, (dists, rep) in enumerate(zip(graph[1:], seq)):
+    for i, (dists, rep, T1) in enumerate(zip(graph[1:], seq, list_T1)):
         if print_progress:
             print(f"\rCalculating repetition {i+1} / {len(seq)}", end='')
 
@@ -160,7 +159,7 @@ def execute_graph(graph: Graph,
         dt = rep.event_time
 
         total_time = rep.event_time.sum()
-        r1 = torch.exp(-total_time / torch.abs(data.T1))
+        r1 = torch.exp(-total_time / torch.abs(T1))
         r2 = torch.exp(-total_time / torch.abs(data.T2))
 
         # Use the same adc phase for all coils
