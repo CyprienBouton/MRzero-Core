@@ -1,4 +1,5 @@
 [![Documentation Status](https://readthedocs.org/projects/mrzero-core/badge/?version=latest)](https://mrzero-core.readthedocs.io/en/latest/?badge=latest)
+![PyPI - Version](https://img.shields.io/pypi/v/MRzeroCore)
 
 # MRzero Core
 
@@ -19,7 +20,29 @@ The typical way of using it is like the following:
 import MRzeroCore as mr0
 ```
 
-Examples on how to use can be found in the [Playground](https://mrzero-core.readthedocs.io/en/latest/playground_mr0/overview.html).
+Examples on how to use MR-zero can be found in the [Playground](https://mrzero-core.readthedocs.io/en/latest/playground_mr0/overview.html).
+
+## Pulseq Integration
+
+**MRzero Core makes Pulseq simulation incredibly easy** - simulate any .seq file in just one line:
+
+```python
+import MRzeroCore as mr0
+
+# Simulate any Pulseq file
+seq = mr0.Sequence.import_file("your_sequence.seq")
+signal = mr0.util.simulate(seq)  # That's it!
+```
+
+### Key Features:
+- **One-line simulation** of any Pulseq .seq file
+- **PyPulseq integration** - write sequences in Python, simulate with MR-zero
+- **Google Colab ready** - [13+ ready-to-run examples](https://mrzero-core.readthedocs.io/en/latest/playground_mr0/overview.html#code-and-simulate-pypulseq)
+- **MATLAB ↔ Python workflow** - create in MATLAB Pulseq, simulate in Python
+- **No dependencies** - fully self-contained Pulseq parser included
+- **Scanner-ready export** - export MR-zero sequences as .seq files
+
+Try it now: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MRsources/MRzero-Core/blob/main/documentation/playground_mr0/mr0_upload_seq.ipynb)
 
 ## Links
 
@@ -45,11 +68,18 @@ maturin build --interpreter python
 docker run --rm -v <path-to-repo>/MRzero-Core:/io ghcr.io/pyo3/maturin build
 ```
 
-To **build the documentation**, run
+**Building the documentation**
+
+Install newest (beta) version of mdBook:
+```bash
+cargo install --git https://github.com/rust-lang/mdBook.git mdbook
 ```
-jupyter-book build documentation/
+
+Run a live-preview server:
+```bash
+# in the root directory:
+mdbook serve documentation
 ```
-in the root folder of this project. This requires jupyter-book as well as MRzeroCore itself to be installed.
 
 
 ## Official builds

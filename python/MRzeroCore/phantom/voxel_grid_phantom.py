@@ -164,6 +164,9 @@ class VoxelGridPhantom:
             def dephasing_func(t, _): return identity(t)
         else:
             raise ValueError(f"Unsupported voxel shape '{voxel_shape}'")
+        
+        if not self.tissue_masks:
+            self.tissue_masks = {"combined": mask}
 
         return SimData(
             self.PD[mask],
@@ -180,8 +183,8 @@ class VoxelGridPhantom:
             dephasing_func,
             recover_func=lambda data: recover(mask, data),
             phantom_motion=self.phantom_motion,
-            voxel_motion=self.voxel_motion,
-            tissue_masks=self.tissue_masks
+            voxel_motion=self.voxel_motion,            
+            tissue_masks = self.tissue_masks
         )
     
     @classmethod
@@ -312,6 +315,11 @@ class VoxelGridPhantom:
             return tensor[..., slices].view(
                 *list(self.PD.shape[:2]), len(slices)
             )
+        def select_multicoil(tensor: torch.Tensor):
+            coils = tensor.shape[0]
+            return tensor[..., slices].view(
+                coils, *list(self.PD.shape[:2]), len(slices)
+            )
 
         return VoxelGridPhantom(
             select(self.PD),
@@ -320,8 +328,8 @@ class VoxelGridPhantom:
             select(self.T2dash),
             select(self.D),
             select(self.B0),
-            select(self.B1).unsqueeze(0),
-            select(self.coil_sens).unsqueeze(0),
+            select_multicoil(self.B1),
+            select_multicoil(self.coil_sens),
             self.size.clone(),
             tissue_masks={
                 key: mask[..., slices] for key, mask in self.tissue_masks.items()
@@ -433,7 +441,7 @@ class VoxelGridPhantom:
             tissue_masks=resample_masks(self.tissue_masks)
         )
 
-    def plot(self, plot_masks=False, plot_slice="center") -> None:
+    def plot(self, plot_masks=False, plot_slice="center", time_unit='s') -> None:
         """
         Print and plot all data stored in this phantom.
 
@@ -444,6 +452,8 @@ class VoxelGridPhantom:
         slice : str | int
             If int, the specified slice is plotted. "center" plots the center
             slice and "all" plots all slices as a grid.
+        time_unit : str
+            Time unit to use for T1, T2, and T2' maps (default: 's'). Supported 's' and 'ms'.
         """
         print("VoxelGridPhantom")
         print(f"size = {self.size}")
@@ -452,7 +462,7 @@ class VoxelGridPhantom:
             s = self.PD.shape[2] // 2
         elif plot_slice == "all":
             s = slice(None)
-        elif plot_slice is int:
+        elif isinstance(plot_slice, int):
             s = plot_slice
         else:
             raise ValueError("expected plot_slice to be 'all', 'center' or an integer")
@@ -464,6 +474,10 @@ class VoxelGridPhantom:
         if self.PD.shape[2] > 1:
             print(f"Plotting slice {s} / {self.PD.shape[2]}")
 
+        
+        # Get time unit scaling factor
+        time_factor = 1000 if time_unit == 'ms' else 1
+    
         # Determine the number of subplots needed
         num_plots = 9  # Base number of plots without masks
         if plot_masks:
@@ -483,18 +497,18 @@ class VoxelGridPhantom:
         plt.colorbar()
 
         plt.subplot(rows, cols, 2)
-        plt.title("T1")
-        imshow(self.T1[:, :, s], vmin=0)
+        plt.title("T1 (%s)" % time_unit)
+        imshow(self.T1[:, :, s]*time_factor, vmin=0)
         plt.colorbar()
 
         plt.subplot(rows, cols, 3)
-        plt.title("T2")
-        imshow(self.T2[:, :, s], vmin=0)
+        plt.title("T2 (%s)" % time_unit)
+        imshow(self.T2[:, :, s]*time_factor, vmin=0)
         plt.colorbar()
 
         plt.subplot(rows, cols, 4)
-        plt.title("T2'")
-        imshow(self.T2dash[:, :, s], vmin=0)
+        plt.title("T2' (%s)" % time_unit)
+        imshow(self.T2dash[:, :, s]*time_factor, vmin=0)
         plt.colorbar()
 
         plt.subplot(rows, cols, 5)
@@ -528,40 +542,21 @@ class VoxelGridPhantom:
         plt.tight_layout()
         plt.show()
 
-    def plot3D(self, data2print: int = 0) -> None:
-        """Print and plot all slices of one selected data stored in this phantom."""
-        print("VoxelGridPhantom")
-        print(f"size = {self.size}")
-        print()
-
-        label = ['PD', 'T1', 'T2', "T2'", "D", "B0", "B1", "coil sens"]
-
-        tensors = [
-            self.PD, self.T1, self.T2, self.T2dash, self.D, self.B0,
-            self.B1.squeeze(0), self.coil_sens
-        ]
-
-        # Warn if we only print a part of all data
-        print(f"Plotting {label[data2print]}")
-
-        tensor = tensors[data2print].squeeze(0)
-
-        util.plot3D(tensor, figsize=(20, 5))
-        plt.title(label[data2print])
-        plt.show()
-
 
 def recover(mask, sim_data: SimData) -> VoxelGridPhantom:
     """Provided to :class:`SimData` to reverse the ``build()``"""
+
+    mask = mask.to(sim_data.device)
+    
     def to_full(sparse):
         assert sparse.ndim < 3
         if sparse.ndim == 2:
             full = torch.zeros(
-                [sparse.shape[0], *mask.shape], dtype=sparse.dtype)
-            full[:, mask] = sparse.cpu()
+                [sparse.shape[0], *mask.shape], dtype=sparse.dtype, device=mask.device)
+            full[:, mask] = sparse
         else:
-            full = torch.zeros(mask.shape)
-            full[mask] = sparse.cpu()
+            full = torch.zeros(mask.shape, device=mask.device)
+            full[mask] = sparse
         return full
 
     return VoxelGridPhantom(
